@@ -8,6 +8,7 @@ assessment.assess_event().
 
 from __future__ import annotations
 
+import threading
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -33,6 +34,7 @@ from app.services.thermal_registry import load_cells, summarize_cells
 SITE_LINK_M = 1000.0
 CACHE_TTL_SECONDS = 600
 _cache: dict[tuple, tuple[float, dict[str, Any]]] = {}
+_build_lock = threading.Lock()
 
 NEAREST_SITE_QUERY = text("""
     WITH pts AS (
@@ -109,6 +111,13 @@ def _prior(summary: dict, start: datetime, group: list) -> dict[str, Any]:
     }
 
 
+def _cached(cache_key: tuple) -> dict[str, Any] | None:
+    hit = _cache.get(cache_key)
+    if hit and time.monotonic() - hit[0] < CACHE_TTL_SECONDS:
+        return hit[1]
+    return None
+
+
 def build_events(db: Session, days: int = 14) -> dict[str, Any]:
     latest_id, latest_time = db.execute(text("""
         SELECT MAX(id), MAX(observed_at) FROM thermal_observations
@@ -120,10 +129,18 @@ def build_events(db: Session, days: int = 14) -> dict[str, Any]:
     """)).scalar()
 
     cache_key = (days, latest_id, registry_build)
-    cached = _cache.get(cache_key)
-    if cached and time.monotonic() - cached[0] < CACHE_TTL_SECONDS:
-        return cached[1]
+    if (hit := _cached(cache_key)) is not None:
+        return hit
+    # A cold cache is hit by several requests at once (warm-up, events,
+    # detections); build once and let the others wait for that result.
+    with _build_lock:
+        if (hit := _cached(cache_key)) is not None:
+            return hit
+        return _build_events(db, days, cache_key, latest_time)
 
+
+def _build_events(db: Session, days: int, cache_key: tuple,
+                  latest_time: datetime | None) -> dict[str, Any]:
     started = time.perf_counter()
     window_end = datetime.now(timezone.utc)
     window_start = window_end - timedelta(days=days)

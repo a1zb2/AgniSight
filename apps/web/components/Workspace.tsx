@@ -161,6 +161,11 @@ export default function Workspace() {
           events={queue} heat={heat} selected={selected} contextFeatures={selected ? contextFeatures : []}
           basemap={basemap} onBasemap={setBasemap} layers={layers} onLayers={setLayers}
           focus={focus} onSelect={(id) => { const e = events.find((x) => x.id === id); if (e) select(e, false); }}
+          onSiteClick={(siteId, center) => {
+            const current = scoped.find((e) => e.properties.site_id === siteId);
+            if (current) select(current, true);
+            else setFocus({ center, zoom: 12, nonce: Date.now() });
+          }}
           loading={loading} error={error}
         />
         {selected && <Dossier

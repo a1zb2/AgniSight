@@ -64,6 +64,7 @@ type Props = {
   onLayers: (value: Layers) => void;
   focus: FocusRequest;
   onSelect: (id: string) => void;
+  onSiteClick: (siteId: string, center: [number, number]) => void;
   loading: boolean;
   error: string | null;
 };
@@ -73,9 +74,10 @@ export default function ThermalMap(props: Props) {
   const container = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const onSelectRef = useRef(onSelect);
+  const onSiteClickRef = useRef(props.onSiteClick);
   const [ready, setReady] = useState(false);
 
-  useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
+  useEffect(() => { onSelectRef.current = onSelect; onSiteClickRef.current = props.onSiteClick; }, [onSelect, props.onSiteClick]);
 
   useEffect(() => {
     if (!container.current || mapRef.current) return;
@@ -103,9 +105,9 @@ export default function ThermalMap(props: Props) {
             // detections carry the colour.
             id: "base-dark", type: "raster", source: "sentinel",
             paint: {
-              "raster-saturation": -0.75,
+              "raster-saturation": -0.65,
               // Brighter when zoomed in, where terrain detail matters.
-              "raster-brightness-max": ["interpolate", ["linear"], ["zoom"], 4, 0.32, 9, 0.5, 13, 0.62],
+              "raster-brightness-max": ["interpolate", ["linear"], ["zoom"], 4, 0.42, 9, 0.58, 13, 0.7],
               "raster-contrast": 0.15,
             },
           },
@@ -229,6 +231,14 @@ export default function ThermalMap(props: Props) {
           + `<div class="tip-meta">Persistent site · active ${p.calendar_months}/12 calendar months · ${Math.round(Number(p.night_share) * 100)}% night</div>`;
       }));
       map.on("mouseleave", "sites", leave);
+      map.on("click", "sites", (e) => {
+        // An event marker on top of the site takes precedence.
+        if (map.queryRenderedFeatures(e.point, { layers: ["events"] }).length) return;
+        const site = e.features?.[0];
+        if (site?.geometry.type === "Point") {
+          onSiteClickRef.current(String(site.properties?.site_id), site.geometry.coordinates as [number, number]);
+        }
+      });
       map.on("click", "events", (e) => {
         const id = e.features?.[0]?.properties?.event_id;
         if (id) onSelectRef.current(String(id));

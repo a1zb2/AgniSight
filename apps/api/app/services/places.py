@@ -42,7 +42,8 @@ def build_place_tables(conn: Connection) -> dict[str, int]:
     parts = conn.execute(text(f"""
         INSERT INTO admin_area_parts (admin_level, name, geometry)
         SELECT admin_level::smallint, {PLACE_NAME},
-               ST_Subdivide(ST_MakeValid(geometry), 128)
+               -- ~50 m simplification is ample for naming a district.
+               ST_Subdivide(ST_MakeValid(ST_SimplifyPreserveTopology(geometry, 0.0005)), 128)
         FROM osm_admin_areas
         WHERE name IS NOT NULL AND admin_level IN ('4', '5')
     """)).rowcount
