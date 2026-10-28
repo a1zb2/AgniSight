@@ -30,6 +30,8 @@ class FIRMSProvider:
     ) -> list[dict]:
         if not 1 <= day_range <= 5:
             raise ValueError("day_range must be between 1 and 5")
+        if not settings.firms_map_key:
+            raise RuntimeError("FIRMS_MAP_KEY is not set")
 
         area = f"{west},{south},{east},{north}"
 

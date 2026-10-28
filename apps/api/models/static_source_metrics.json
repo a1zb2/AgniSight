@@ -1,4 +1,5 @@
 {
+  "name": "static_source_model_v2",
   "trained_at": "2026-10-28T06:11:52.204959+00:00",
   "target": "NASA FIRMS type 2 (static land source) vs type 0 (vegetation)",
   "archive": "fire_archive_J2V-C2_827421.csv",

@@ -196,6 +196,7 @@ def main() -> None:
     ).to_numpy().astype(float)
 
     report = {
+        "name": "static_source_model_v2",
         "trained_at": datetime.now(timezone.utc).isoformat(),
         "target": "NASA FIRMS type 2 (static land source) vs type 0 (vegetation)",
         "archive": CSV_PATH.name,
@@ -222,7 +223,7 @@ def main() -> None:
     joblib.dump({
         "model": model,
         "features": FEATURES,
-        "name": "static_source_model_v2",
+        "name": report["name"],
         "metrics": {
             "spatial_test": report["spatial_test"],
             "baseline_site_rule": report["baseline_site_rule"],

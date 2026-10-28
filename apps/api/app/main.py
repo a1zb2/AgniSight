@@ -12,6 +12,7 @@ from app.api.events import router as events_router
 from app.api.firms import router as firms_router
 from app.api.insights import router as insights_router
 from app.api.observations import router as observations_router
+from app.core.config import settings
 from app.db.database import SessionLocal, engine
 from app.services.events import build_events
 
@@ -32,7 +33,8 @@ def _warm_event_cache() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    threading.Thread(target=_warm_event_cache, daemon=True).start()
+    if settings.events_source == "live":
+        threading.Thread(target=_warm_event_cache, daemon=True).start()
     yield
 
 
@@ -44,19 +46,18 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=settings.cors_origin_list,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 # GeoJSON layers are large and compress roughly 10x.
 app.add_middleware(GZipMiddleware, minimum_size=2048)
 app.include_router(context_router)
 app.include_router(observations_router)
-app.include_router(firms_router)
+# Ingestion spends the FIRMS quota and writes to the database, so it is
+# only exposed where a key is configured (not on the public hosted API).
+if settings.firms_map_key:
+    app.include_router(firms_router)
 app.include_router(events_router)
 app.include_router(insights_router)
 

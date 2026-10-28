@@ -1,13 +1,15 @@
-fastapi
-uvicorn[standard]
-psycopg[binary]
-SQLAlchemy
-GeoAlchemy2
-pydantic-settings
-Shapely
-httpx
-alembicnumpy
-pandas
-joblib
+# Pinned to the versions tested locally so hosted builds match.
+fastapi==0.135.1
+uvicorn[standard]==0.41.0
+psycopg[binary]==3.3.5
+SQLAlchemy==2.0.52
+GeoAlchemy2==0.20.0
+pydantic-settings==2.12.0
+Shapely==2.1.2
+httpx==0.28.1
+alembic==1.20.0
+numpy==2.4.3
+pandas==2.3.3
+joblib==1.6.0
 # The saved classifier is a pickle; load it with the version it was trained on.
 scikit-learn==1.9.0

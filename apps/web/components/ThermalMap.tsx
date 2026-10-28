@@ -76,6 +76,14 @@ export default function ThermalMap(props: Props) {
   const onSelectRef = useRef(onSelect);
   const onSiteClickRef = useRef(props.onSiteClick);
   const [ready, setReady] = useState(false);
+  // The hosted API sleeps when idle and takes up to a minute to wake.
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    if (!props.loading) return;
+    const timer = setTimeout(() => setSlow(true), 5000);
+    return () => clearTimeout(timer);
+  }, [props.loading]);
 
   useEffect(() => { onSelectRef.current = onSelect; onSiteClickRef.current = props.onSiteClick; }, [onSelect, props.onSiteClick]);
 
@@ -307,7 +315,9 @@ export default function ThermalMap(props: Props) {
       <div><i style={{ width: 11, height: 11, background: "radial-gradient(#fff1e0, #f97316 50%, rgba(234,88,12,0.2) 75%)" }} />Satellite detection, brighter = more FRP</div>
     </div>
 
-    {props.loading && <div className="map-status map-card"><LoaderCircle size={16} className="spin" />Assessing recent detections…</div>}
+    {props.loading && <div className="map-status map-card"><LoaderCircle size={16} className="spin" />
+      {slow ? "Waking the server. Free hosting sleeps when idle, so the first visit can take up to a minute." : "Assessing recent detections…"}
+    </div>}
     {props.error && <div className="map-status map-card error">Could not load events: {props.error}</div>}
   </section>;
 }

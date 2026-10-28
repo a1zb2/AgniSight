@@ -5,9 +5,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.providers.firms import FIRMSProvider
-from app.services.grid import cell_of
 from app.services.pipeline_runs import finish_run, start_run
-from app.services.thermal_registry import build_sites, refresh_cells
+from app.services.thermal_registry import build_sites, merge_observations
 
 # India bounding box used for all live requests.
 INDIA_AREA = {"west": 68.0, "south": 6.0, "east": 98.0, "north": 38.0}
@@ -98,13 +97,17 @@ class FIRMSIngestionService:
             })
 
         new_rows = self._exclude_known_detections(rows)
-        inserted = 0
+        inserted, refreshed = 0, 0
         if new_rows:
             inserted = self.db.execute(INSERT_SQL, new_rows).rowcount
-
-        # Keep per-location history current for the rows just added.
-        cells = {cell_of(r["longitude"], r["latitude"]) for r in new_rows}
-        refreshed = refresh_cells(self.db.connection(), cells)
+            # None of these fingerprints existed before (see
+            # _exclude_known_detections), so this finds exactly the new rows.
+            ids = self.db.execute(text(
+                "SELECT id FROM thermal_observations "
+                "WHERE fingerprint = ANY(CAST(:fps AS varchar[]))"
+            ), {"fps": [r["fingerprint"] for r in new_rows]}).scalars().all()
+            # Add them to per-location and national history.
+            refreshed = merge_observations(self.db.connection(), ids)
         self.db.commit()
 
         return {

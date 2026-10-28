@@ -5,6 +5,11 @@ counts, NASA source-type counts and the distinct UTC dates it was active.
 Interactive requests read history from here instead of scanning the
 multi-year observation table.
 
+cell_months and archive_days: monthly per-cell and daily national totals
+for charts. With thermal_cells they hold everything the API needs from the
+archive, so a hosted copy can keep only recent raw detections. Ingestion
+adds new detections to all three with merge_observations().
+
 thermal_sites: connected groups of cells whose neighbourhood was active in
 at least SITE_MIN_MONTHS distinct months. Measured on the 2024-01..2026-06
 labeled archive, this rule agrees with NASA's "static land source" label far
@@ -54,44 +59,126 @@ CELL_AGGREGATE = """
     GROUP BY 1, 2
 """
 
-INSERT_CELLS = """
-    INSERT INTO thermal_cells (
-        cell_x, cell_y, detection_count, night_count, high_confidence_count,
-        frp_count, frp_sum, frp_max, typed_count, type0_count, type1_count,
-        type2_count, type3_count, active_dates, first_seen, last_seen
-    )
+CELL_MONTH_AGGREGATE = """
+    SELECT
+        agni_cell(longitude) AS cell_x,
+        agni_cell(latitude) AS cell_y,
+        date_trunc('month', observed_at AT TIME ZONE 'UTC')::date AS month,
+        COUNT(*) AS detections,
+        COUNT(*) FILTER (WHERE day_night = 'N') AS night,
+        COUNT(frp) AS frp_count,
+        COUNT(firms_type) AS typed,
+        COUNT(*) FILTER (WHERE firms_type = 2) AS nasa_static,
+        SUM(frp) AS frp_sum,
+        MAX(frp) AS frp_max
+    FROM thermal_observations
+    WHERE source = 'NASA_FIRMS' {where}
+    GROUP BY 1, 2, 3
+"""
+
+ARCHIVE_DAY_AGGREGATE = """
+    SELECT
+        (observed_at AT TIME ZONE 'UTC')::date AS day,
+        COUNT(*) AS detections,
+        COUNT(*) FILTER (WHERE day_night = 'N') AS night,
+        COUNT(firms_type) AS typed,
+        COUNT(*) FILTER (WHERE firms_type = 2) AS nasa_static
+    FROM thermal_observations
+    WHERE source = 'NASA_FIRMS' {where}
+    GROUP BY 1
 """
 
 
-def rebuild_cells(conn: Connection) -> int:
-    conn.execute(text("TRUNCATE thermal_cells"))
-    result = conn.execute(
-        text(INSERT_CELLS + CELL_AGGREGATE.format(where=""))
-    )
-    conn.execute(text("ANALYZE thermal_cells"))
-    return int(result.rowcount)
+def _sum(column: str) -> str:
+    return f"{column} = t.{column} + EXCLUDED.{column}"
 
 
-def refresh_cells(conn: Connection, cells: Iterable[tuple[int, int]]) -> int:
-    """Recompute only the given cells, e.g. after an ingestion run."""
-    cells = sorted(set(cells))
-    if not cells:
-        return 0
+def _nullable_sum(column: str) -> str:
+    # SUM ignores NULLs, so a side with no FRP values does not erase the other.
+    return (f"{column} = (SELECT SUM(v) FROM (VALUES (t.{column}), "
+            f"(EXCLUDED.{column})) AS s(v))")
 
-    params = {"xs": [c[0] for c in cells], "ys": [c[1] for c in cells]}
-    keys = """
-        (SELECT * FROM unnest(CAST(:xs AS integer[]), CAST(:ys AS integer[]))
-         AS k(x, y))
+
+# Each summary table: (name, columns, aggregate, how a merge combines rows).
+SUMMARIES = (
+    ("thermal_cells", (
+        "cell_x", "cell_y", "detection_count", "night_count",
+        "high_confidence_count", "frp_count", "frp_sum", "frp_max",
+        "typed_count", "type0_count", "type1_count", "type2_count",
+        "type3_count", "active_dates", "first_seen", "last_seen",
+    ), CELL_AGGREGATE, "(cell_x, cell_y)", (
+        *map(_sum, ("detection_count", "night_count", "high_confidence_count",
+                    "frp_count", "typed_count", "type0_count", "type1_count",
+                    "type2_count", "type3_count")),
+        _nullable_sum("frp_sum"),
+        "frp_max = GREATEST(t.frp_max, EXCLUDED.frp_max)",
+        "active_dates = ARRAY(SELECT DISTINCT d FROM unnest("
+        "t.active_dates || EXCLUDED.active_dates) AS d ORDER BY d)",
+        "first_seen = LEAST(t.first_seen, EXCLUDED.first_seen)",
+        "last_seen = GREATEST(t.last_seen, EXCLUDED.last_seen)",
+    )),
+    ("cell_months", (
+        "cell_x", "cell_y", "month", "detections", "night", "frp_count",
+        "typed", "nasa_static", "frp_sum", "frp_max",
+    ), CELL_MONTH_AGGREGATE, "(cell_x, cell_y, month)", (
+        *map(_sum, ("detections", "night", "frp_count", "typed", "nasa_static")),
+        _nullable_sum("frp_sum"),
+        "frp_max = GREATEST(t.frp_max, EXCLUDED.frp_max)",
+    )),
+    ("archive_days", (
+        "day", "detections", "night", "typed", "nasa_static",
+    ), ARCHIVE_DAY_AGGREGATE, "(day)", (
+        *map(_sum, ("detections", "night", "typed", "nasa_static")),
+    )),
+)
+
+
+def archive_is_pruned(conn: Connection) -> bool:
+    """True when raw detections older than the stored history were removed
+    (the hosted copy keeps only recent ones), so history cannot be rebuilt."""
+    return bool(conn.execute(text("""
+        SELECT (SELECT MIN(first_seen) FROM thermal_cells)
+             < (SELECT MIN(observed_at) FROM thermal_observations)
+    """)).scalar())
+
+
+def rebuild_history(conn: Connection) -> dict[str, int]:
+    """Recompute cells, cell months and archive days from every detection."""
+    if archive_is_pruned(conn):
+        raise RuntimeError(
+            "This database keeps only recent detections; rebuilding would "
+            "erase older history. Rebuild on the full archive instead."
+        )
+    report = {}
+    for table, columns, aggregate, _, _ in SUMMARIES:
+        conn.execute(text(f"TRUNCATE {table}"))
+        report[table] = int(conn.execute(text(
+            f"INSERT INTO {table} ({', '.join(columns)}) "
+            + aggregate.format(where="")
+        )).rowcount)
+        conn.execute(text(f"ANALYZE {table}"))
+    return report
+
+
+def merge_observations(conn: Connection, ids: Iterable[int]) -> int:
+    """Add newly stored detections to the history tables.
+
+    Works from the new rows alone, so it does not need the older archive.
+    Each id must be merged exactly once. Returns the number of cells touched.
     """
-    conn.execute(text(f"""
-        DELETE FROM thermal_cells
-        WHERE (cell_x, cell_y) IN (SELECT x, y FROM {keys} AS keys)
-    """), params)
-    result = conn.execute(text(INSERT_CELLS + CELL_AGGREGATE.format(
-        where=f"AND (agni_cell(longitude), agni_cell(latitude)) "
-              f"IN (SELECT x, y FROM {keys} AS keys)"
-    )), params)
-    return int(result.rowcount)
+    ids = sorted(set(ids))
+    if not ids:
+        return 0
+    touched = 0
+    for table, columns, aggregate, key, updates in SUMMARIES:
+        result = conn.execute(text(
+            f"INSERT INTO {table} AS t ({', '.join(columns)}) "
+            + aggregate.format(where="AND id = ANY(CAST(:ids AS integer[]))")
+            + f" ON CONFLICT {key} DO UPDATE SET {', '.join(updates)}"
+        ), {"ids": ids})
+        if table == "thermal_cells":
+            touched = int(result.rowcount)
+    return touched
 
 
 def load_cells(

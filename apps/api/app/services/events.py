@@ -342,8 +342,7 @@ MAP_PROPERTIES = (
 )
 
 
-def events_map_layer(db: Session, days: int = 14) -> dict[str, Any]:
-    full = build_events(db, days)
+def map_layer(full: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "FeatureCollection",
         "metadata": full["metadata"],
@@ -359,10 +358,17 @@ def events_map_layer(db: Session, days: int = 14) -> dict[str, Any]:
     }
 
 
-def detections_layer(db: Session, days: int = 14) -> dict[str, Any]:
+def detection_rows(full: dict[str, Any]) -> dict[str, Any]:
     """Individual detections in the window, in compact column form."""
-    full = build_events(db, days)
     return {"metadata": full["metadata"], **full["detections"]}
+
+
+def events_map_layer(db: Session, days: int = 14) -> dict[str, Any]:
+    return map_layer(build_events(db, days))
+
+
+def detections_layer(db: Session, days: int = 14) -> dict[str, Any]:
+    return detection_rows(build_events(db, days))
 
 
 def event_detail(db: Session, event_id: str, days: int = 14) -> dict[str, Any] | None:

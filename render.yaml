@@ -1,0 +1,25 @@
+# Render Blueprint for the AgniSight API (free web service).
+# Serves events published by refresh_data.py, so it never loads the model.
+services:
+  - type: web
+    name: agnisight-api
+    runtime: python
+    plan: free
+    # Closest Render region to India; create the Neon project in
+    # AWS Singapore (ap-southeast-1) too.
+    region: singapore
+    rootDir: apps/api
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: EVENTS_SOURCE
+        value: snapshot
+      # Neon connection string; entered in the Render dashboard.
+      - key: DATABASE_URL
+        sync: false
+      # The Vercel site URL, e.g. https://agnisight.vercel.app
+      - key: CORS_ORIGINS
+        sync: false

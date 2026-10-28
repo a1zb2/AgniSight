@@ -8,6 +8,7 @@ and it is not a probability that a fire is occurring.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 from datetime import timezone
@@ -15,13 +16,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = (
-    Path(__file__).resolve().parents[2] / "models" / "static_source_model.joblib"
-)
+MODEL_DIR = Path(__file__).resolve().parents[2] / "models"
+MODEL_PATH = MODEL_DIR / "static_source_model.joblib"
+REPORT_PATH = MODEL_DIR / "static_source_metrics.json"
 
 FEATURES = [
     "brightness_ti4", "brightness_ti5", "frp", "scan", "track",
@@ -90,6 +89,8 @@ def predict_static_probability(rows: list[dict[str, float]]) -> list[float] | No
     bundle = load_bundle()
     if bundle is None or not rows:
         return None
+    import pandas as pd  # deferred with the model: the API may never need it
+
     try:
         frame = pd.DataFrame(rows, columns=bundle["features"])
         return bundle["model"].predict_proba(frame)[:, 1].tolist()
@@ -98,8 +99,11 @@ def predict_static_probability(rows: list[dict[str, float]]) -> list[float] | No
         return None
 
 
+@lru_cache(maxsize=1)
 def model_card() -> dict[str, Any] | None:
-    bundle = load_bundle()
-    if bundle is None:
+    """Held-out metrics, read from the training report so that showing them
+    does not load scikit-learn."""
+    if not REPORT_PATH.is_file():
         return None
-    return {"name": bundle["name"], **bundle["metrics"]}
+    report = json.loads(REPORT_PATH.read_text(encoding="utf-8"))
+    return {key: report[key] for key in ("name", "spatial_test", "baseline_site_rule")}
