@@ -17,6 +17,7 @@ import time
 
 from app.db.database import engine
 from app.services.pipeline_runs import finish_run, start_run
+from app.services.places import build_place_tables
 from app.services.spatial_context import build_context_features
 from app.services.thermal_registry import build_sites, rebuild_cells
 
@@ -37,6 +38,11 @@ def main() -> int:
                 t = time.perf_counter()
                 report["context_features"] = build_context_features(conn)
                 print(f"OSM context features: {report['context_features']:,} "
+                      f"({time.perf_counter() - t:.1f}s)")
+
+                t = time.perf_counter()
+                report["places"] = build_place_tables(conn)
+                print(f"Place labels: {report['places']} "
                       f"({time.perf_counter() - t:.1f}s)")
 
                 t = time.perf_counter()

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.models.thermal_observation import ThermalObservation
 from app.services.assessment import assess_event
 from app.services.grid import cell_of, neighborhood
+from app.services.places import places_for_points
 from app.services.spatial_context import context_for_points
 from app.services.static_model import (
     history_features,
@@ -176,6 +177,7 @@ def build_events(db: Session, days: int = 14) -> dict[str, Any]:
         for g in groups
     ]
     contexts = context_for_points(conn, centroids)
+    places = places_for_points(conn, centroids)
 
     sites: dict[int, dict] = {}
     if centroids:
@@ -191,8 +193,8 @@ def build_events(db: Session, days: int = 14) -> dict[str, Any]:
     category_counts: Counter[str] = Counter()
     priority_counts: Counter[str] = Counter()
 
-    for index, (group, (lon, lat), context) in enumerate(
-        zip(groups, centroids, contexts)
+    for index, (group, (lon, lat), context, place) in enumerate(
+        zip(groups, centroids, contexts, places)
     ):
         times = [o.observed_at.astimezone(timezone.utc) for o in group]
         start, end = min(times), max(times)
@@ -253,11 +255,17 @@ def build_events(db: Session, days: int = 14) -> dict[str, Any]:
                 # Flat copies for map styling and filtering.
                 "category": assessment["category"],
                 "category_title": assessment["title"],
+                "short_title": assessment["short_title"],
                 "priority_level": assessment["priority"]["level"],
                 "priority_score": assessment["priority"]["score"],
                 "strength_level": assessment["strength"]["level"],
                 "location_pattern": assessment["location_pattern"],
                 "site_id": sites[index]["site_id"] if index in sites else None,
+                "place_label": place["label"] if place else None,
+                "context_name": (
+                    context["primary"]["name"] if context["primary"] else None
+                ),
+                "place": place,
                 "assessment": assessment,
                 "history": _history_dict(summary, prior),
                 "site": sites.get(index),
@@ -270,6 +278,19 @@ def build_events(db: Session, days: int = 14) -> dict[str, Any]:
         })
 
     features.sort(key=lambda f: -f["properties"]["priority_score"])
+
+    # Every detection with its event, for the map's heat layer.
+    event_ids = [f"AG-{min(o.id for o in g):06d}" for g in groups]
+    detection_rows = [
+        [
+            round(o.longitude, 4), round(o.latitude, 4),
+            round(o.frp, 1) if o.frp is not None else 0,
+            1 if o.day_night == "N" else 0,
+            index,
+        ]
+        for index, group in enumerate(groups)
+        for o in group
+    ]
     result = {
         "type": "FeatureCollection",
         "metadata": {
@@ -284,6 +305,11 @@ def build_events(db: Session, days: int = 14) -> dict[str, Any]:
             "build_seconds": round(time.perf_counter() - started, 2),
         },
         "features": features,
+        "detections": {
+            "columns": ["longitude", "latitude", "frp_mw", "night", "event_index"],
+            "event_ids": event_ids,
+            "rows": detection_rows,
+        },
     }
     _cache.clear()
     _cache[cache_key] = (time.monotonic(), result)
@@ -293,8 +319,9 @@ def build_events(db: Session, days: int = 14) -> dict[str, Any]:
 # Properties small enough to ship for every event on the map.
 MAP_PROPERTIES = (
     "event_id", "observation_count", "start_time", "end_time", "max_frp_mw",
-    "day_night", "category", "category_title", "priority_level",
+    "day_night", "category", "category_title", "short_title", "priority_level",
     "priority_score", "strength_level", "location_pattern", "site_id",
+    "place_label", "context_name",
 )
 
 
@@ -313,6 +340,12 @@ def events_map_layer(db: Session, days: int = 14) -> dict[str, Any]:
             for f in full["features"]
         ],
     }
+
+
+def detections_layer(db: Session, days: int = 14) -> dict[str, Any]:
+    """Individual detections in the window, in compact column form."""
+    full = build_events(db, days)
+    return {"metadata": full["metadata"], **full["detections"]}
 
 
 def event_detail(db: Session, event_id: str, days: int = 14) -> dict[str, Any] | None:

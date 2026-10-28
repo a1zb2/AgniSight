@@ -1,5 +1,5 @@
-import Map from "../components/Map";
+import Workspace from "../components/Workspace";
 
 export default function Home() {
-  return <Map />;
+  return <Workspace />;
 }

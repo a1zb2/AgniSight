@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.observations import get_db
-from app.services.events import event_detail, events_map_layer
+from app.services.events import detections_layer, event_detail, events_map_layer
 
 
 router = APIRouter(
@@ -20,6 +20,16 @@ def thermal_events_geojson(
     return events_map_layer(db, days)
 
 
+@router.get("/detections")
+def thermal_detections(
+    days: int = Query(default=14, ge=1, le=30),
+    db: Session = Depends(get_db),
+):
+    """Every detection in the window with its event, for heat rendering."""
+    return detections_layer(db, days)
+
+
+# Declared last so it does not capture /geojson or /detections.
 @router.get("/{event_id}")
 def thermal_event(
     event_id: str,

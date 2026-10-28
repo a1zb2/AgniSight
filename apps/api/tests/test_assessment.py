@@ -93,12 +93,13 @@ class CategoryTests(unittest.TestCase):
         self.assertEqual(a["category"], "industrial_source")
         self.assertEqual(a["strength"]["level"], "strong")
 
-    def test_new_activity_inside_industrial_area_is_an_anomaly(self):
+    def test_new_activity_inside_industrial_area_is_episodic(self):
         a = assess_event(
             event(day_night="N"), history(), prior(), None,
             context("inside", "industrial_area"), None,
         )
-        self.assertEqual(a["category"], "industrial_anomaly")
+        self.assertEqual(a["category"], "industrial_episodic")
+        self.assertEqual(a["title"], "First heat detected at a mapped industrial site")
         self.assertIn(a["priority"]["level"], ("review", "investigate"))
 
     def test_persistent_without_mapped_facility(self):
@@ -156,6 +157,16 @@ class PriorityTests(unittest.TestCase):
         self.assertIn("prior mean", labels)
         self.assertNotIn("established activity", labels)
         self.assertGreaterEqual(a["priority"]["score"], 25)
+
+    def test_single_faint_detection_is_not_investigated(self):
+        a = assess_event(
+            event(observation_count=1, max_frp_mw=0.4,
+                  confidence_counts={"l": 1}),
+            history(), prior(), None, context("adjacent", "industrial_area"),
+            None,
+        )
+        self.assertEqual(a["category"], "industrial_episodic")
+        self.assertNotEqual(a["priority"]["level"], "investigate")
 
     def test_score_is_bounded(self):
         a = assess_event(

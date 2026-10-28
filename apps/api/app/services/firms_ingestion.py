@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.providers.firms import FIRMSProvider
 from app.services.grid import cell_of
 from app.services.pipeline_runs import finish_run, start_run
-from app.services.thermal_registry import refresh_cells
+from app.services.thermal_registry import build_sites, refresh_cells
 
 # India bounding box used for all live requests.
 INDIA_AREA = {"west": 68.0, "south": 6.0, "east": 98.0, "north": 38.0}
@@ -178,6 +178,9 @@ class FIRMSIngestionService:
             "records_received": sum(w["records_received"] for w in windows),
             "inserted": sum(w["inserted"] for w in windows),
         }
+        # Sites summarise the cells, so refresh them after new detections.
+        if summary["inserted"]:
+            summary["sites"] = build_sites(self.db.connection())
         finish_run(self.db.connection(), run_id, "success", summary)
         self.db.commit()
         return summary

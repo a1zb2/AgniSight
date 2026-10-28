@@ -33,12 +33,51 @@ CATEGORY_TITLES = {
     "waste_source": "Persistent heat at a mapped landfill",
     "industrial_source": "Persistent heat source at a mapped industrial site",
     "unmapped_source": "Persistent heat source with no mapped facility",
-    "industrial_anomaly": "Unusual thermal activity at a mapped industrial site",
+    "industrial_episodic": "Heat at a mapped industrial site",
     "extraction_activity": "Thermal activity at a mapped mine or quarry",
     "waste_activity": "Thermal activity at a mapped landfill",
     "vegetation_candidate": "Likely vegetation or agricultural burning",
     "unresolved": "Unresolved thermal anomaly",
 }
+
+# Industrial sites are expected to produce heat; what matters is whether
+# this location is a known continuous source. Episodic categories are
+# therefore titled by the location's history rather than called unusual.
+EPISODIC_PREFIX = {
+    "new": "First heat detected",
+    "occasional": "Occasional heat",
+    "seasonal": "Seasonal heat",
+    "recurrent": "Recurring heat",
+    "persistent": "Heat",
+}
+EPISODIC_SITES = {
+    "industrial_episodic": ("at a mapped industrial site", "at industrial site"),
+    "extraction_activity": ("at a mapped mine or quarry", "at mine or quarry"),
+    "waste_activity": ("at a mapped landfill", "at landfill"),
+}
+
+SHORT_TITLES = {
+    "volcanic": "Volcanic activity",
+    "offshore_source": "Persistent offshore heat",
+    "offshore_anomaly": "Offshore detection",
+    "kiln_activity": "Brick kiln heat",
+    "extraction_source": "Persistent heat at mine",
+    "waste_source": "Persistent landfill heat",
+    "industrial_source": "Persistent industrial heat",
+    "unmapped_source": "Persistent heat, no mapped facility",
+    "vegetation_candidate": "Vegetation or crop burning",
+    "unresolved": "Unresolved detection",
+}
+
+
+def titles(category: str, pattern: str) -> tuple[str, str]:
+    """Full and short title for a category, given the location pattern."""
+    if category in EPISODIC_SITES:
+        long_place, short_place = EPISODIC_SITES[category]
+        prefix = EPISODIC_PREFIX[pattern]
+        return f"{prefix} {long_place}", f"{prefix} {short_place}"
+    return CATEGORY_TITLES[category], SHORT_TITLES[category]
+
 
 PATTERN_LABELS = {
     "persistent": "Year-round persistent location",
@@ -175,9 +214,9 @@ def assess_event(
         ev.append(Evidence(
             "supports" if model_p >= 0.7 else "context",
             "Static-source model",
-            f"Model estimate that NASA would class this as a static source: "
-            f"{_pct(model_p)} (calibrated on held-out regions; no NASA "
-            "label exists here yet).",
+            f"Estimated {_pct(model_p)} chance that NASA would flag this "
+            "detection as a static source. NASA has not labelled this "
+            "location yet.",
             "moderate" if model_p >= 0.7 or model_p <= 0.1 else "weak",
         ))
 
@@ -244,7 +283,7 @@ def assess_event(
         else:
             category = "unmapped_source"
     elif close and group in INDUSTRIAL_GROUPS:
-        category = "industrial_anomaly"
+        category = "industrial_episodic"
     elif close and group == "extraction":
         category = "extraction_activity"
     elif close and group == "waste":
@@ -260,7 +299,7 @@ def assess_event(
     # Conflicts worth surfacing explicitly.
     if category == "vegetation_candidate" and nasa_label == "static":
         category = "unresolved"
-    if category in ("industrial_anomaly", "vegetation_candidate") and model_used and model_p >= 0.7:
+    if category in ("industrial_episodic", "vegetation_candidate") and model_used and model_p >= 0.7:
         ev.append(Evidence(
             "conflicts", "Static-source model",
             "The model leans towards a static source although the location "
@@ -284,7 +323,8 @@ def assess_event(
 
     return {
         "category": category,
-        "title": CATEGORY_TITLES[category],
+        "title": titles(category, pattern)[0],
+        "short_title": titles(category, pattern)[1],
         "location_pattern": pattern,
         "location_pattern_label": PATTERN_LABELS[pattern],
         "strength": strength,
@@ -320,8 +360,8 @@ def _priority(category: str, event: dict, history: dict, prior: dict,
     def add(points: int, label: str) -> None:
         factors.append({"points": points, "label": label})
 
-    if category == "industrial_anomaly":
-        add(40, "Activity at a mapped industrial site with no established persistent pattern")
+    if category == "industrial_episodic":
+        add(35, "Heat at a mapped industrial site that is not a known continuous source")
     elif category == "waste_activity":
         add(25, "Activity at a mapped landfill")
     elif category == "extraction_activity":
@@ -332,7 +372,14 @@ def _priority(category: str, event: dict, history: dict, prior: dict,
     peak = event.get("max_frp_mw")
     baseline = prior.get("mean_frp")
     anomalous = False
-    if peak is not None and baseline and prior["frp_count"] >= 10:
+    # A baseline only means something for an established source; a field
+    # burned a few times before has no meaningful "normal" intensity.
+    has_baseline = (
+        pattern in ("persistent", "recurrent")
+        and category != "vegetation_candidate"
+        and prior["frp_count"] >= 10
+    )
+    if peak is not None and baseline and has_baseline:
         ratio = peak / baseline
         if ratio >= 5:
             add(25, f"Peak FRP {ratio:.1f}x this location's prior mean ({baseline:.1f} MW)")
@@ -353,8 +400,17 @@ def _priority(category: str, event: dict, history: dict, prior: dict,
         add(5, f"{count} detections in this event")
     if event.get("high_confidence_count", 0) > 0:
         add(5, "At least one high-confidence detection")
-    if pattern == "new":
+    # Novelty matters where heat is unexpected, not for crop burning.
+    if pattern == "new" and category != "vegetation_candidate":
         add(10, f"First detection at this location since {HISTORY_START_LABEL}")
+
+    # Isolated faint or low-confidence detections include sensor noise and
+    # sub-pixel hot spots; keep them below substantial events.
+    confidence = event.get("confidence_counts") or {}
+    if count == 1 and (peak is None or peak < 3):
+        add(-15, f"Single low-intensity detection ({peak or 0:.1f} MW)")
+    if confidence and set(confidence) <= {"l", "low"}:
+        add(-10, "Only low-confidence detections")
 
     routine = category in (
         "industrial_source", "kiln_activity", "extraction_source",
@@ -410,7 +466,7 @@ def _next_steps(category: str, event: dict, primary: dict | None) -> list[str]:
     )
     watch = f"Check whether detections recur on the next overpasses ({REVISIT_NOTE})."
     steps = {
-        "industrial_anomaly": [
+        "industrial_episodic": [
             imagery,
             f"Confirm with {name}, the fire service or the State Pollution "
             "Control Board whether an incident or new process occurred.",

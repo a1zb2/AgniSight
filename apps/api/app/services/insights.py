@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.services.pipeline_runs import latest_runs
+from app.services.places import places_for_points
 from app.services.static_model import model_card
 
 _cache: dict[str, tuple[float, Any]] = {}
@@ -132,6 +133,7 @@ def sites_geojson(conn: Connection, site_class: str | None) -> dict[str, Any]:
     def iso(v):
         return v.isoformat() if v else None
 
+    places = places_for_points(conn, [(r["longitude"], r["latitude"]) for r in rows])
     return {
         "type": "FeatureCollection",
         "features": [
@@ -140,11 +142,14 @@ def sites_geojson(conn: Connection, site_class: str | None) -> dict[str, Any]:
                 "id": r["site_id"],
                 "geometry": {"type": "Point", "coordinates": [r["longitude"], r["latitude"]]},
                 "properties": {
-                    k: (iso(v) if isinstance(v, datetime) else v)
-                    for k, v in r.items() if k != "geometry"
+                    **{
+                        k: (iso(v) if isinstance(v, datetime) else v)
+                        for k, v in r.items() if k != "geometry"
+                    },
+                    "place_label": place["label"] if place else None,
                 },
             }
-            for r in rows
+            for r, place in zip(rows, places)
         ],
     }
 
