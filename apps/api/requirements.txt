@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+psycopg[binary]
+SQLAlchemy
+GeoAlchemy2
+pydantic-settings
+Shapely
+httpx
+alembicnumpy
+pandas
+joblib
+# The saved classifier is a pickle; load it with the version it was trained on.
+scikit-learn==1.9.0

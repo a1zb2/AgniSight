@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: agnisight-db
+    # Docker's 64 MB default /dev/shm is too small for parallel
+    # queries and VACUUM over the multi-year archive.
+    shm_size: 512mb
+
+    environment:
+      POSTGRES_DB: agnisight
+      POSTGRES_USER: agnisight
+      POSTGRES_PASSWORD: agnisight
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - agnisight_db_data:/var/lib/postgresql/data
+
+volumes:
+  agnisight_db_data:

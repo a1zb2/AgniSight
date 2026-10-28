@@ -1,0 +1,91 @@
+{
+  "trained_at": "2026-10-28T06:11:52.204959+00:00",
+  "target": "NASA FIRMS type 2 (static land source) vs type 0 (vegetation)",
+  "archive": "fire_archive_J2V-C2_827421.csv",
+  "features": [
+    "brightness_ti4",
+    "brightness_ti5",
+    "frp",
+    "scan",
+    "track",
+    "acq_month",
+    "acq_minute_utc",
+    "confidence_code",
+    "is_night",
+    "hist_active_months",
+    "hist_calendar_months",
+    "hist_active_days",
+    "hist_night_share",
+    "hist_log_detections",
+    "hist_mean_frp"
+  ],
+  "split": "held-out 0.5 degree blocks: 60% train, 20% isotonic calibration, 20% test",
+  "rows": {
+    "train": 982769,
+    "calibration": 318805,
+    "test": 360908
+  },
+  "spatial_test": {
+    "precision": 0.9206,
+    "recall": 0.9743,
+    "f1": 0.9467,
+    "average_precision": 0.9803,
+    "brier": 0.00992,
+    "positives": 40076,
+    "rows": 360908
+  },
+  "spatial_test_reliability": [
+    {
+      "bin": "0.0-0.1",
+      "rows": 314458,
+      "mean_predicted": 0.0,
+      "observed_static_rate": 0.0
+    },
+    {
+      "bin": "0.1-0.3",
+      "rows": 1606,
+      "mean_predicted": 0.225,
+      "observed_static_rate": 0.12
+    },
+    {
+      "bin": "0.3-0.5",
+      "rows": 2432,
+      "mean_predicted": 0.37,
+      "observed_static_rate": 0.332
+    },
+    {
+      "bin": "0.5-0.7",
+      "rows": 6162,
+      "mean_predicted": 0.56,
+      "observed_static_rate": 0.72
+    },
+    {
+      "bin": "0.7-0.9",
+      "rows": 5622,
+      "mean_predicted": 0.844,
+      "observed_static_rate": 0.838
+    },
+    {
+      "bin": "0.9-1.0",
+      "rows": 30628,
+      "mean_predicted": 0.976,
+      "observed_static_rate": 0.976
+    }
+  ],
+  "baseline_site_rule": {
+    "rule": "neighbourhood active >= 8 calendar months and >= 50% night detections",
+    "precision": 0.8721,
+    "recall": 0.9982,
+    "f1": 0.9309,
+    "average_precision": 0.8708,
+    "brier": 0.01645,
+    "positives": 40076,
+    "rows": 360908
+  },
+  "limitations": [
+    "Labels are NASA's static-source flag, not verified industrial activity; NASA's flag misses some persistent sources (see thermal_sites report).",
+    "Volcano and offshore classes are not modelled.",
+    "Location history is computed from the same archive period as the labels.",
+    "Only NOAA-21 VIIRS detections are used."
+  ]
+}

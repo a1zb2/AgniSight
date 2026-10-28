@@ -1,0 +1,81 @@
+{
+  "target": "NASA FIRMS VIIRS thermal anomaly type",
+  "archive_rows": 1665372,
+  "training_rows": 122116,
+  "test_rows": 100000,
+  "test_period_start": "2026-01-03",
+  "accuracy": 0.94212,
+  "balanced_accuracy": 0.8013354163325129,
+  "macro_f1": 0.7980127341595974,
+  "majority_baseline_accuracy": 0.899,
+  "classification_report": {
+    "0: Presumed vegetation fire": {
+      "precision": 0.9913924996788246,
+      "recall": 0.9442269187986652,
+      "f1-score": 0.9672350632110891,
+      "support": 89900.0
+    },
+    "1: Active volcano": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 0.0
+    },
+    "2: Other static land source": {
+      "precision": 0.6472111414374694,
+      "recall": 0.9291670853009143,
+      "f1-score": 0.7629733520336606,
+      "support": 9953.0
+    },
+    "3: Offshore detection": {
+      "precision": 0.8863636363636364,
+      "recall": 0.5306122448979592,
+      "f1-score": 0.6638297872340425,
+      "support": 147.0
+    },
+    "accuracy": 0.94212,
+    "macro avg": {
+      "precision": 0.6312418193699826,
+      "recall": 0.6010015622493847,
+      "f1-score": 0.598509550619698,
+      "support": 100000.0
+    },
+    "weighted avg": {
+      "precision": 0.9569817366639891,
+      "recall": 0.94212,
+      "f1-score": 0.9464588893419135,
+      "support": 100000.0
+    }
+  },
+  "confusion_matrix_types_0_to_3": [
+    [
+      84886,
+      0,
+      5009,
+      5
+    ],
+    [
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      700,
+      0,
+      9248,
+      5
+    ],
+    [
+      37,
+      0,
+      32,
+      78
+    ]
+  ],
+  "limitations": [
+    "NASA type labels are broad thermal-anomaly categories, not verified industrial-fire labels.",
+    "The temporal split does not test generalization to entirely unseen locations.",
+    "This model is not an industrial-fire probability model."
+  ]
+}
